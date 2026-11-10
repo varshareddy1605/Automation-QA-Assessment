@@ -1,0 +1,239 @@
+{
+  "name": "Bonus_UptimeMonitor_Varsha.json",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes"
+            }
+          ]
+        }
+      },
+      "id": "efab9529-1056-472f-934d-ddcf047abdd9",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "fc66d2c8-4a73-48eb-8cee-8cd4b5a74585",
+      "name": "Manual Run",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        208
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ping each target, retry once on anything other than HTTP 200, track response time + state\nconst TARGETS = [\n  { name: 'Conduit home page', url: 'https://realworld.svelte.dev/' },\n  { name: 'Conduit article page', url: 'https://realworld.svelte.dev/article/introduction-to-machine-learning-for-developers' },\n];\nconst TIMEOUT_MS = 10000;      // treat slower than this as a failure\nconst RETRY_DELAY_MS = 3000;   // wait before the single retry\nconst REMINDER_EVERY = 12;     // while still down, remind every 12 checks (~1 hour)\n\nconst sd = $getWorkflowStaticData('global');   // persists only in active (published) runs\nsd.stats = sd.stats || {};\nsd.streak = sd.streak || {};\n\nconst ping = async (url) => {\n  const t0 = Date.now();\n  try {\n    const res = await this.helpers.httpRequest({\n      method: 'GET', url, returnFullResponse: true, ignoreHttpStatusErrors: true, timeout: TIMEOUT_MS,\n    });\n    return { status: res.statusCode, ms: Date.now() - t0, error: null };\n  } catch (e) {\n    return { status: 0, ms: Date.now() - t0, error: String(e.message || e).slice(0, 150) };\n  }\n};\n\nconst check = async (t) => {\n  let r = await ping(t.url);\n  let attempts = 1;\n  if (r.status !== 200) {\n    await new Promise(res => setTimeout(res, RETRY_DELAY_MS));\n    r = await ping(t.url);\n    attempts = 2;\n  }\n  return { ...t, ...r, attempts, ok: r.status === 200 };\n};\n\nconst results = await Promise.all(TARGETS.map(check));\n\nreturn results.map(r => {\n  const st = sd.stats[r.name] = sd.stats[r.name] || { checks: 0, failures: 0, totalMs: 0, maxMs: 0 };\n  st.checks++; st.totalMs += r.ms; st.maxMs = Math.max(st.maxMs, r.ms);\n  if (!r.ok) st.failures++;\n\n  const prev = sd.streak[r.name] || 0;\n  const streak = r.ok ? 0 : prev + 1;\n  sd.streak[r.name] = streak;\n\n  let notify = null, message = '';\n  const detail = r.error ? 'error: ' + r.error : 'HTTP ' + r.status;\n  if (!r.ok && (streak === 1 || streak % REMINDER_EVERY === 0)) {\n    notify = 'down';\n    message = '🚨 **DOWN: ' + r.name + '**\\n' + r.url + '\\nResult: ' + detail + ' after ' + r.attempts +\n      ' attempts (last try ' + r.ms + ' ms)\\nConsecutive failed checks: ' + streak + '\\nTime: ' + new Date().toISOString();\n  } else if (r.ok && prev > 0) {\n    notify = 'recovered';\n    message = '✅ **RECOVERED: ' + r.name + '**\\nHTTP 200 in ' + r.ms + ' ms after ' + prev + ' failed checks\\nTime: ' + new Date().toISOString();\n  }\n  return { json: { name: r.name, url: r.url, status: r.status, ms: r.ms, ok: r.ok, attempts: r.attempts,\n                   notify, shouldNotify: notify !== null, message } };\n});"
+      },
+      "id": "247ea932-8eef-410f-ae76-420667fe777e",
+      "name": "Check Sites",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "notify",
+              "leftValue": "={{ $json.shouldNotify }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5df4c138-8abd-44b6-b91b-3fb9c63886af",
+      "name": "Status changed or still down?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        544,
+        112
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "={{ $json.message }}",
+        "options": {}
+      },
+      "id": "abd0d375-ced5-4f9d-8180-f2d5046d570f",
+      "name": "Send Alert",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        832,
+        112
+      ],
+      "webhookId": "828c785f-6e84-4d13-b1d3-78df4284744b",
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "jqHVEYEA2RJWEHMM",
+          "name": "Discord Webhook account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "c720984c-bac1-452c-81ec-6da26c3c345b",
+      "name": "Daily 9am",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Daily summary from stats collected by the 5-minute monitor, then reset the counters\nconst sd = $getWorkflowStaticData('global');\nconst stats = sd.stats || {};\nconst names = Object.keys(stats);\nlet msg;\nif (!names.length) {\n  msg = '📊 **Daily uptime summary**\\nNo checks recorded yet.';\n} else {\n  const lines = names.map(n => {\n    const s = stats[n];\n    const up = ((s.checks - s.failures) / s.checks * 100).toFixed(1);\n    const avg = Math.round(s.totalMs / s.checks);\n    return '- **' + n + '**: ' + up + '% up (' + (s.checks - s.failures) + '/' + s.checks + ' checks), avg ' + avg + ' ms, slowest ' + s.maxMs + ' ms';\n  });\n  msg = '📊 **Daily uptime summary**\\n' + lines.join('\\n');\n}\nsd.stats = {};\nreturn [{ json: { content: msg } }];"
+      },
+      "id": "b46f15de-390c-44d1-8289-d86fb77055c9",
+      "name": "Build Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        288,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "={{ $json.content }}",
+        "options": {}
+      },
+      "id": "f10a16a0-2578-42fb-85dd-5bd940b0ddc8",
+      "name": "Send Summary",
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        544,
+        432
+      ],
+      "webhookId": "45c67305-0d08-4f59-8a9e-67ce2ed65e30",
+      "credentials": {
+        "discordWebhookApi": {
+          "id": "jqHVEYEA2RJWEHMM",
+          "name": "Discord Webhook account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Check Sites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Run": {
+      "main": [
+        [
+          {
+            "node": "Check Sites",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sites": {
+      "main": [
+        [
+          {
+            "node": "Status changed or still down?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Status changed or still down?": {
+      "main": [
+        [
+          {
+            "node": "Send Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 9am": {
+      "main": [
+        [
+          {
+            "node": "Build Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary": {
+      "main": [
+        [
+          {
+            "node": "Send Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "571e6517-f8b2-4c50-8ebc-992d8070c149",
+  "meta": {
+    "instanceId": "ad31ce74744990cbf34f64b84f0b6dc5b6b1b7af8c39dc7f0e4a4966936a2a6b"
+  },
+  "nodeGroups": [],
+  "id": "M42i0xhmrrIVyyyD",
+  "tags": []
+}
