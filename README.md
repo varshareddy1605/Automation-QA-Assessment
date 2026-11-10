@@ -1,8 +1,5 @@
 # Automation & QA Developer - Take-Home Assessment
 
-**Candidate:** Varsha
-**Walkthrough video :** https://drive.google.com/file/d/1ksx61SmH06r6bQhe70PtuuOJNof-lPFQ/view?usp=sharing
-
 ## Repository contents
 ```
 README.md                                   this overview
